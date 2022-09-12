@@ -24,95 +24,61 @@ out vec4 out_Col; // This is the final output color that you will see on your
                   // screen for the pixel that is currently being processed.
 
 
-//float perlin2D(vec2 uv){
-//    float surfletSum = 0.f;
-//    for(int dx = 0; dx <= 1; ++dx) {
-//        for(int dy = 0; dy <= 1; ++dy) {
-//            surfletSum += random2(uv);
-//        }
-//    }
-//    return surfletSum;
-//}
-float random2(vec2 p) {
-    return fract(sin(dot(p.xy, vec2(1223.9898, 78435.233))) * 43758.5453);
+
+
+vec3 random3(vec3 p ) {
+    float x = fract(sin((dot(p, vec3(127.1,311.7,191.999)))) * 43758.5453);
+    float y = fract(sin((dot(p, vec3(269.5,183.3,154.645)))) * 43758.5453);
+    float z = fract(sin((dot(p, vec3(420.6,631.2,183.453)))) * 43758.5453);
+
+    return vec3(x, y, z);
 }
 
-float random(vec2 p)
-{
-    float x = dot(p,vec2(4371.321,-9137.327));
-    return 2.0 * fract(sin(x)*17381.94472) - 1.0;
-}
 
-//float fbm(vec2 p){
-//    float total = 0.f;
-//    float persistence = 1.0f/ 2.0f;
-//    float amplitude = persistence;
-//    for(int i = 0; i < 8; i++){
-//        p = p * 2.0;
-//        amplitude *= 0.5;
-//        total += random2(p * amplitude);
-//   }
-//    return total;
-//}
-float noise(vec2 p){
-        return fract(sin(fract(sin(p.x) * (43.13311)) + p.y) * 31.0011);
-}
+float surflet3D(vec3 p, vec3 gridPoint) {
+    // Compute the distance between p and the grid point along each axis, and warp it with a
+    // quintic function so we can smooth our cells
+    vec3 t2 = abs(p - gridPoint);
 
-float fbm( vec2 p )
-{
-    float f = 0.0;
-    float gat = 0.0;
-    
-    for (float octave = 0.; octave < 5.; ++octave)
-    {
-        float la = pow(2.0, octave);
-        float ga = pow(0.5, octave + 1.);
-        f += ga*noise( la * p );
-        gat += ga;
-    }
-    
-    f = f/gat;
-    
-    return f;
-}
+    vec3 poweroffive = vec3(t2.x * t2.x * t2.x * t2.x * t2.x, t2.y * t2.y * t2.y * t2.y * t2.y, t2.z * t2.z * t2.z * t2.z * t2.z);
+    vec3 poweroffour = vec3(t2.x * t2.x * t2.x * t2.x, t2.y * t2.y * t2.y * t2.y , t2.z * t2.z * t2.z * t2.z );
+    vec3 powerofthree = vec3(t2.x * t2.x * t2.x, t2.y * t2.y * t2.y, t2.z * t2.z * t2.z);
 
-float length2(vec2 p){
-    return dot(p,p);
-}
 
-float worley(vec2 p) {
-    //Set our distance to infinity
-        float d = 1e30;
-    //For the 9 surrounding grid points
-        for (int xo = -1; xo <= 1; ++xo) {
-                for (int yo = -1; yo <= 1; ++yo) {
-            //Floor our vec2 and add an offset to create our point
-                        vec2 tp = floor(p) + vec2(xo, yo);
-            //Calculate the minimum distance for this grid point
-            //Mix in the noise value too!
-                        d = min(d, length2(p - tp - noise(tp)));
-                }
+    vec3 t = vec3(1.f) - 6.f * poweroffive + 15.f * poweroffour - 10.f * powerofthree;
+    // Get the random vector for the grid point (assume we wrote a function random2
+    // that returns a vec2 in the range [0, 1])
+    vec3 gradient = random3(gridPoint) * 2.f - vec3(1.f, 1.f, 1.f);
+    // Get the vector from the grid point to P
+    vec3 diff = p - gridPoint;
+    // Get the value of our height field by dotting grid->P with our gradient
+    float height = dot(diff, gradient);
+    // Scale our height field (i.e. reduce it) by our polynomial falloff function
+    return height * t.x * t.y * t.z;
+}
+//
+float perlin3D(vec3 p) {
+    float surfletSum = 0.f;
+    // Iterate over the four integer corners surrounding uv
+    for(int dx = 0; dx <= 1; ++dx) {
+        for(int dy = 0; dy <= 1; ++dy) {
+            for(int dz = 0; dz <= 1; ++dz) {
+                surfletSum += surflet3D(p, (floor(p) + vec3(dx, dy, dz)));
+            }
         }
-        return 3.0*exp(-4.0*abs(2.5*d - 1.0));
+    }
+    return surfletSum;
 }
 
-float fworley(vec2 p) {
-    //Stack noise layers
-        return sqrt(sqrt(sqrt(
-                worley(p*5.0 + 0.05*u_Time) *
-                sqrt(worley(p * 50.0 + 0.12 + -0.1*u_Time)) *
-                sqrt(sqrt(worley(p * -10.0 + 0.03*u_Time))))));
-}
 
 void main()
 {
-    vec2 pos = fs_Pos.xy;
-    float rand = fbm(pos);
-    
-    float t = fworley(fs_Col.xy / 1500.0);
+    vec3 pos = fs_Pos.xyz;
+    vec3 q = vec3(0.3, 0.4, 0.5);
+    float rand = perlin3D(pos);
     
     float r = cos(0.0001 * u_Time + rand) / 2.f + 0.3 * sin(fs_Pos.x * fs_Pos.y) + 0.7;
-    float g = sin(0.0010 * u_Time + rand * t) / 3.f + 0.3 * cos(fs_Pos.y) + 0.7;
+    float g = sin(0.0010 * u_Time + rand) / 3.f + 0.3 * cos(fs_Pos.y) + 0.7;
     float b = sin(0.0016 * u_Time + rand) / 2.f + 0.4 * sin(fs_Pos.z) + 0.7;
     
     vec4 color_final = vec4(r, g, b, 1.0);
